@@ -1,2 +1,2 @@
 # CCDC-Scripts
-Various scripts I am developing/using for CCDC competitions
+This is a repository of various scripts I am developing/using for CCDC competitions
