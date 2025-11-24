@@ -1,0 +1,273 @@
+This is not to be run as a full script. 
+Pick and choose what to use
+Anything written as <variable> is to be replaced with whatever variable is inside <>
+It’s a yap sesh, just Ctrl+F if you’re looking for anything specific
+
+1. Make sure everything is up to date with 
+- sudo dnf update -y
+
+2. Download the repo
+- If git isn't installed:
+-->sudo dnf install git -y
+git clone https://github.com/CCDC-MSU/MSU-BlueScripts.git ccdc-repo
+cd ccdc-repo
+
+3. Ports/Networking
+- Check all open ports/connections
+ss -tuln
+systemctl list-unit-files --state=enabled
+
+Mitigation:
+- Stop/disable unnecessary services:
+sudo systemctl stop <service>
+sudo systemctl disable <service>
+
+Firewall rules:
+- Set default deny all incoming rules
+sudo firewall-cmd --permanent --set-default-zone=block
+
+- Add known allowed services (change this per system)
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --permanent --add-service=ftp 
+sudo firewall-cmd --permanent --add-service=http
+- If there's other known ports
+sudo firewall-cmd --zone=drop --add-port=<port>/<service> --permanent
+
+- Reload firewall to apply rules (DO THIS LAST)
+sudo firewall-cmd --reload
+
+- Verify the rules were set
+sudo firewall-cmd --list-all (shows all allowed ports/services)
+ss -tuln (shows all TCP/UDP ports that are currently listening)
+
+4. Users/Groups
+- Check users/groups
+cat /etc/passwd
+cat /etc/group
+awk -F: '($2==""){print $1}' /etc/shadow (lists all users that currently have no password, obviously that's bad)
+--> awk -F: '($2==""){ print $1 }' /etc/shadow | xargs -I{} sudo usermod -L {} (will automatically lock all passwordless accounts)
+
+- Hidden backdoors
+awk -F: '($3==0){print $1}' /etc/passwd (checks for UID 0 accounts, aka backdoors with root)
+sudo usermod -L <account> (Will lock specified account)
+sudo usermod -s /sbin/nologin <account> (Will block ssh to user) MAY BE ABLE TO DO THIS TO ALL ACCOUNTS
+
+- Lock or change passwords on accounts
+sudo passwd <user>
+--> Obviously want to use strong passwords and keep a record of them
+sudo usermod -L <user>
+--> Will lock whatever account you specify
+----> Check initial_triage.sh for script including the known user lists
+
+- Check user groups (see initial_triage.sh)
+sudo usermod -aG wheel <admin_user>
+--> moves user to wheel group
+sudo gpasswd -d <user> wheel
+--> removes user from wheel
+
+5. Harden SSH
+- Disable root login (maybe don't idk depends on how we're logging in... don't wanna get logged out)
+sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sudo systemctl restart sshd
+
+- Disable empty password login
+sudo sed -i 's/^#PermitEmptyPasswords.*/PermitEmptyPasswords no/' /etc/ssh/sshd_config
+
+- Could be useless but we can also limit the number of attempts
+sudo sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
+
+6. Malware/Persistence
+- Recursively search for common avenues used for reverse shells or persistence
+grep -R "nc -e" / -n 2>/dev/null (netcat rev shell)
+grep -R "bash -i" / -n 2>/dev/null (another rev shell)
+grep -R "python" / -n 2>/dev/null (sometimes used for shell scripts and backdoors too)
+grep -R "python3 -c" / -n 2>/dev/null
+grep -R "ThumbmarkJS" / -n 2>/dev/null (possibly JavaScript thing idk I found some JS on the CentOS box)
+grep -R "curl" / -n 2>/dev/null
+grep -R "wget" / -n 2>/dev/null
+grep -R "ssh-rsa" /home -n 2>/dev/null
+
+- Inspect the file with 
+less <filename>
+- delete or move it with
+sudo rm <filename> or move it to quarantine zone
+- can also check creation/mod time with
+ls -l --time=ctime <file>
+
+- Check for cron jobs
+crontab -l  (shows crons of current user do sudo to check root)
+sudo ls -la /etc/cron.d/  (system-wide crons)
+sudo ls -la /etc/cron.hourly/
+sudo ls -la /etc/cron.daily/
+sudo ls -la /var/spool/cron/  (user crons stored in system)
+--> looking for:
+    - shells, python scripts, or binaries from weird folders (/tmp, /dev/shm, /var/tmp)
+    - URLs (curl/wget)
+    - reverse shell commands
+- If anything sus is found:
+sudo rm /etc/cron.d/<file>  (removes specified cron)
+sudo crontab -r -u <user>  (remove all cron jobs for user)
+
+- Check enabled services
+sudo systemctl list-unit-files --type=service | grep enabled  (lists all enabled services)
+sudo systemctl --type=service | grep running (shows the currently running services)
+- Types of things to look for: (idk this is what I found on the internet as some suggestions)
+    - update-agent.service
+    - systemd-helper.service
+    - kworker.service
+    - nginx-helper.service
+- Also look for anything running from: (same here)
+    - /tmp
+    - /var/tmp
+    - /home/<user>
+    - /opt/.hidden/
+- If anything sus is found
+sudo systemctl stop <service>
+sudo systemctl disable <service>
+sudo systemctl mask <service>   (prevent it from starting again)
+
+7. Set User ID Binaries? (idk went down a rabbit hole but basically runs with file owners perms aka root usually)
+- Checks for unknown binaries that may be backdoors
+sudo find / -xdev -perm -4000
+--> -xdev makes it not go into other filesystems like mnt
+--> -perm -4000 looks for SUID bitset?
+
+- Look for:
+    - /tmp/shell
+    - /usr/local/bin/debug
+    - /home/.../backup
+    - /usr/bin/sudobackdoor
+    - /usr/bin/ssh-backdoor
+
+- Fit it with:
+sudo chmod -s <file>
+
+- If yk for sure its bad:
+sudo rm <file>
+
+8. Shell startup stuff
+- Could definitely see them do something like this
+grep -R "nc " /home -n
+grep -R "bash -i" /home -n
+grep -R "curl" /home -n
+grep -R "wget" /home -n
+sudo grep -R "alias" /etc/profile /etc/bashrc
+- Might want to look in:
+    - /home/*/.bashrc
+    - /home/*/.profile
+    - /etc/profile
+    - /etc/bash.bashrc
+
+- Check if they made any aliases on the system
+alias
+
+- Fix by restoring the default:
+sudo cp /etc/skel/.bashrc /home/<user>/.bashrc
+
+9. Sus processes
+- Check for sus processes or connections to IPs outside of known IPs
+ps auxf
+top  (could get a little hard to see stuff)
+sudo lsof -i (may need to install with "sudo dnf install lsof")
+
+- Look for anything running from:
+    - /tmp
+    - /dev/shm
+    - /var/tmp
+
+- Also look for any weird commands like "python3 -m http.server" or "bash -c bash -i >& ........"
+
+- Fix with:
+sudo kill -9 <pid>
+sudo rm <path-to-binary>
+
+EXTRAS (who doesn’t love those lol)
+- All suggestions for hardening, monitoring, and incident response given during last meeting
+
+- Finds cron jobs that have been modified recently
+sudo find /etc/cron* /var/spool/cron -mtime -1
+
+- Find crontabs for all users
+for user in $(cut -f1 -d: /etc/passwd); do echo "# $user #"; sudo crontab -u $user -l; done
+
+- Find all users with root privileges
+for user in $(cut -f1 -d: /etc/passwd); do if [[ $(id -u $user) -eq 0 ]]; then echo "$user"; fi; done
+
+- Find all files modified in the last day
+- type f for regular files
+- mtime -1 for files modified in the last day (-1 can be changed to increase search range)
+find $(systemd-analyze unit-paths) -type f -mtime -1
+
+- Find all files owned by root
+systemd-analyze unit-paths | xargs grep -r "User=root"
+
+Malicious commands in shell startup scripts (.bashrc, .profile)
+- Need to check directories /etc/profile and /etc/profile.d/* (system wide)
+
+- Gets home directories for all users
+sudo getent passwd | cut -d: -f6 | sort | uniq
+
+- Check for keys in each users directory:(typically no keys in ccdc)
+sudo grep -R "ssh-" /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys
+
+- Make a secure (non root) account own the key or move the key to archive it.
+sudo adduser brad
+sudo cp /root/.ssh/authorized_keys /home/brad/.ssh/authorized_keys
+sudo chown brad:brad /home/brad/.ssh/authorized_keys
+sudo chmod 600 /home/brad/.ssh/authorized_keys
+
+sudo grep -R "eval(|system(|base64_decode" /var/www/
+
+- Seeing if we're already cooked
+- Check for unusual connections: 
+ss -tupn
+- Check child processes: 
+pstree -ap -C age
+
+- If suspicious processes are found, kill them with the following command:
+ps aux | grep <process_name>
+then 
+pgrep <process_name>
+then
+kill -9 <pid>
+
+- Check the hashes and show only bad ones
+- Debian/Ubuntu
+sudo debsums | grep -v "OK" 
+- centOS
+sudo rpm -Va
+
+- Find the package
+- Debian/Ubuntu
+dpkg -S /usr/bin/cat 
+- centOS
+rpm -qf $(which cat)
+
+- Reinstall the packages 
+- Debian/Ubuntu
+sudo apt-get install -reinstall
+- centOS
+sudo dnf reinstall
+
+- Look for binaries in common paths (/bin, /usr/bin, /sbin) with recent modification times.
+sudo find /bin /usr/bin /sbin /usr/sbin -type f -mtime -7
+- CAN BE SPOOFED WITH TOUCH
+
+- Create a baseline for TCP and process information
+-t for TCP
+-u for UDP
+-p for process
+ss -tup | tee ~/notes/ss_initial.txt
+
+- List listeners
+-i for showing all network-related files
+-n for human-readable (no hostnames)
+	-P for no port names
+sudo lsof -i -n -P
+or 
+sudo lsof -i -n -P | grep LISTEN
+
+- Monitors every process that calls the listen() syscall and prints its PID and name.
+- Useful for detecting new or unexpected services starting to listen on a port.
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_listen { printf("PID %d (%s) is listening\n", pid, comm);}'
+
