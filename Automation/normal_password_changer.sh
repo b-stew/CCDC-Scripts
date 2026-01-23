@@ -23,9 +23,7 @@ for user in $USERS; do
     echo "$user:$newpass" >> "$OUTPUT"
 done
 
-echo "Done!"
 echo "Password file is in: $OUTPUT"
-echo "Download it from your local machine, then delete it."
 
 # Run the following command to download: scp admin-user@remote.host.ip:/dev/shm/passwords_list.txt ./passwords_list.txt
 # Then remove file from remote host: rm /dev/shm/passwords_list.txt
