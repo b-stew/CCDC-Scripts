@@ -14,7 +14,7 @@ USERS=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd)
 
 for user in $USERS; do
     # Generates a secure 15-character password (can change length)
-    newpass=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()_+=-{}[]<>?' < /dev/urandom | head -c 15)
+    newpass=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 15)
 
     echo "Setting password for $user..."
     echo "$user:$newpass" | sudo chpasswd
