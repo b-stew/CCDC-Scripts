@@ -141,6 +141,12 @@ sudo apt update
 # debsums    = package file integrity verification
 sudo apt install chkrootkit rkhunter debsums -y
 
+# Run debsums
+# -c = shows only failed checksum files
+sudo debsums -c 
+# checks all files and only failed/modified ones
+sudo debsums -a | grep -v OK
+
 # Run chkrootkit scan
 sudo chkrootkit
 
