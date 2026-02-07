@@ -3,7 +3,7 @@
 ##############################################
 # Do not actually run this script
 # It is for reference use only for various threat hunting tasks
-# Most is tailored to CentOS, but can be adapted for other systems
+# Most is tailored to RHEL, but can be adapted for other systems
 
 ##############################################
 # 1. NETWORK CONNECTION ENUMERATION
